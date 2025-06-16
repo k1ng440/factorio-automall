@@ -5,18 +5,25 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/k1ng440/factorio-automall/blueprint"
 	"github.com/k1ng440/factorio-automall/recipe"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <filename>\n", os.Args[0])
+	if len(os.Args) < 3 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <filename> <quality=true/false>\n", os.Args[0])
 		os.Exit(1)
 	}
 
 	filename := os.Args[1]
+
+    useQuality, err := strconv.ParseBool(os.Args[2])
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error: quality must be 'true' or 'false', got %s\n", os.Args[2])
+        os.Exit(1)
+    }
 
 	data, err := recipe.ReadFile(filename)
 	if err != nil {
@@ -28,25 +35,28 @@ func main() {
 	}
 
 	deciderConditions := &blueprint.DeciderConditions{
-		Conditions: make([]*blueprint.DeciderConditionsCondition, 0),
+		Conditions: []*blueprint.DeciderConditionsCondition{ },
 		Outputs: []*blueprint.DeciderConditionOutputs{
 			{
 				Signal: &blueprint.Signal{
 					Type: "virtual",
 					Name: "signal-each",
 				},
-				Constant:           100000,
+				Constant:           -1,
 				CopyCountFromInput: false,
 			},
 		},
 	}
 
-	qualities := []string{
-		"normal",
-		"uncommon",
-		"rare",
-		"epic",
-		"legendary",
+	qualities := []string{"normal"}
+	if useQuality {
+		qualities = []string{
+			"normal",
+			"uncommon",
+			"rare",
+			"epic",
+			"legendary",
+		}
 	}
 
 	constantCombinator := &blueprint.ConstantCombinator{}
@@ -123,7 +133,9 @@ func main() {
 		}
 	}
 
-	count := 1000000
+
+	// itemValue represents the unique value set in the constant combinator, used by the decider combinator to output the item can be crafted.
+	itemValue := -5000000
 
 	idx := map[string]int{
 		"legendary": 0,
@@ -144,34 +156,37 @@ func main() {
 		}
 
 		for _, quality := range qualities {
-			deciderConditions.Conditions = append(deciderConditions.Conditions, &blueprint.DeciderConditionsCondition{
-				FirstSignal: &blueprint.Signal{
-					Type: "virtual",
-					Name: "signal-each",
+			itemValue -= 5000
+
+			deciderConditions.Conditions = append(deciderConditions.Conditions,
+				&blueprint.DeciderConditionsCondition{
+					FirstSignal: &blueprint.Signal{
+						Type: "virtual",
+						Name: "signal-each",
+					},
+					SecondSignal: &blueprint.Signal{
+						Name:    rec.Key,
+						Quality: quality,
+					},
+					Comparator: "=",
+					FirstSignalNetworks: &blueprint.SignalNetworks{
+						Red:   true,
+						Green: false,
+					},
+					SecondSignalNetworks: &blueprint.SignalNetworks{
+						Red:   true,
+						Green: false,
+					},
 				},
-				SecondSignal: &blueprint.Signal{
-					Name:    rec.Key,
-					Quality: quality,
-				},
-				Comparator: "=",
-				FirstSignalNetworks: &blueprint.SignalNetworks{
-					Red:   true,
-					Green: false,
-				},
-				SecondSignalNetworks: &blueprint.SignalNetworks{
-					Red:   true,
-					Green: false,
-				},
-			})
+			)
 
 			idx[quality]++
-			count++
 			constantCombinatorSections[quality].Filters = append(constantCombinatorSections[quality].Filters, &blueprint.ConstantCombinatorSectionFilter{
 				Index:      idx[quality],
 				Name:       rec.Key,
 				Quality:    quality,
 				Comparator: "=",
-				Count:      count,
+				Count:      itemValue, // negative value
 			})
 
 			for _, ingredient := range rec.Ingredients {
@@ -219,6 +234,11 @@ func shouldIgnore(rec *recipe.Recipe) bool {
 
 	ignoreKey := map[string]bool{
 		"copper-bacteria-cultivation": true,
+		"infinity-pipe": true,
+		"infinity-chest": true,
+		"ice": true,
+		"ice-platform": true,
+		"heat-interface": true,
 	}
 
 	ignoreCategories := map[string]bool{
